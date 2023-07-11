@@ -106,6 +106,18 @@ class Qwqer extends CarrierModule
             $rangeWeight->delimiter1 = 0;
             $rangeWeight->delimiter2 = 30;
             $rangeWeight->save();
+
+            $addressRequiredFiled = new CustomerAddress();
+            $addressRequiredFiled->addFieldsRequiredDatabase(array(
+                'phone',
+                'postcode'
+            ));
+
+            $storeRequiredFiled = new Store();
+            $storeRequiredFiled->addFieldsRequiredDatabase(array(
+                'phone',
+                'postcode'
+            ));
         }
 
         return $res;
@@ -123,6 +135,17 @@ class Qwqer extends CarrierModule
 
         $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_REFERENCE_ID'));
         Configuration::deleteByName('QWQER_REFERENCE_ID');
+
+        $addressRequiredFiled = new CustomerAddress();
+        $objectName = $addressRequiredFiled->getObjectName();
+        Db::getInstance()->execute(
+            'DELETE FROM ' . _DB_PREFIX_ . 'required_field'
+            . " WHERE object_name = '" . Db::getInstance()->escape($objectName) . "'");
+        $storeRequiredFiled = new Store();
+        $objectName = $storeRequiredFiled->getObjectName();
+        Db::getInstance()->execute(
+            'DELETE FROM ' . _DB_PREFIX_ . 'required_field'
+            . " WHERE object_name = '" . Db::getInstance()->escape($objectName) . "'");
 
         return parent::uninstall() && $qwqerCarrier->delete();
     }
