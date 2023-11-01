@@ -9,7 +9,7 @@ class QwqerClient
 {
     protected $apiKey;
 
-    protected $apiUrl = 'https://qwqer.hostcream.eu/api/v1/';
+    protected $apiUrl = 'https://qwqer.hostcream.eu/api/v1/plugins/prestashop/';
 
     protected $tradingPointId;
 
@@ -17,6 +17,10 @@ class QwqerClient
      * @var HttpClient
      */
     protected $client;
+
+    const REAL_TYPE_SCHEDULED_DELIVERY = 'ScheduledDelivery';
+    const REAL_TYPE_EXPRESS_DELIVERY = 'ExpressDelivery';
+    const REAL_TYPE_OMNIVA_DELIVERY = 'OmnivaParcelTerminal';
 
     /**
      *
@@ -75,13 +79,18 @@ class QwqerClient
         return str_replace('{trading-point-id}', $this->tradingPointId, $path);
     }
 
-    public function getParams(Address $destinationAddress)
+    public function getParams(Address $destinationAddress, $realType = self::REAL_TYPE_SCHEDULED_DELIVERY)
     {
         $params = array();
 
         $phoneNumberUtil = PhoneNumberUtil::getInstance();
 
         $deliveryOrder = new QwqerDeliveryOrder();
+        $deliveryOrder->setRealType($realType);
+        if ($deliveryOrder->getRealType() == self::REAL_TYPE_OMNIVA_DELIVERY) {
+            //the field should not be added to request in others request types
+            $deliveryOrder->parcel_size = 'L';
+        }
         $deliveryOrder->setCategory(Configuration::get('QWQER_ORDER_CATEGORY'));
         $params = array_merge($params, (array)$deliveryOrder);
 
@@ -105,28 +114,49 @@ class QwqerClient
         ));
         $params['origin'] = (array)$deliveryOrderPlace;
 
-        $destinationDeliveryOrderPlace = new QwqerDeliveryOrderPlace();
-        $destinationDeliveryOrderPlace->setName($destinationAddress->firstname . ' ' . $destinationAddress->lastname);
-        $phone = $destinationAddress->phone;
-        if (!$this->hasCountryCode($phone)) {
-            $phoneNumberObject = $phoneNumberUtil->parse($phone, $country->iso_code);
-            $phone = $phoneNumberUtil->format($phoneNumberObject, PhoneNumberFormat::E164);
-        }
-        $destinationDeliveryOrderPlace->setPhone($phone);
-        $destinationCountry = new Country($destinationAddress->id_country, Context::getContext()->language->id);
-        $destinationState = new State($destinationAddress->id_state, Context::getContext()->language->id);
-        $address = $this->getRightStructuredAddress($destinationAddress->address1, $destinationAddress->address2, $destinationState->name, $destinationAddress->city, $destinationAddress->postcode, $destinationCountry->name);
-        $destinationDeliveryOrderPlace->setAddress($address);
-        $destinationCoordinates = $this->getCoordinates($address);
+        if ($deliveryOrder->getRealType() == self::REAL_TYPE_OMNIVA_DELIVERY) {
+            $parcelMachines = $this->getParcelMachines();
+            $parcelKey = 0;
+            if (Context::getContext()->cookie->selected_parcel_machine_id) {
+                foreach ($parcelMachines as $key => $parcelMachine) {
+                    if (Context::getContext()->cookie->selected_parcel_machine_id == $parcelMachine['id']) {
+                        $parcelKey = $key;
+                    }
+                }
+            }
+            if (count($parcelMachines) > 0) {
+                $firstParcelMachine = $parcelMachines[$parcelKey];
+                $destinationDeliveryOrderPlace = new QwqerDeliveryOrderPlace();
+                $destinationDeliveryOrderPlace->setName($firstParcelMachine['name']);
+                $destinationDeliveryOrderPlace->setPhone($phone);
+                $destinationDeliveryOrderPlace->setAddress($firstParcelMachine['name']);
+                $destinationDeliveryOrderPlace->setCoordinates($firstParcelMachine['coordinates']);
+                $params['destinations'] = array((array)$destinationDeliveryOrderPlace);
+            }
+        } else {
+            $destinationDeliveryOrderPlace = new QwqerDeliveryOrderPlace();
+            $destinationDeliveryOrderPlace->setName($destinationAddress->firstname . ' ' . $destinationAddress->lastname);
+            $phone = $destinationAddress->phone;
+            if (!$this->hasCountryCode($phone)) {
+                $phoneNumberObject = $phoneNumberUtil->parse($phone, $country->iso_code);
+                $phone = $phoneNumberUtil->format($phoneNumberObject, PhoneNumberFormat::E164);
+            }
+            $destinationDeliveryOrderPlace->setPhone($phone);
+            $destinationCountry = new Country($destinationAddress->id_country, Context::getContext()->language->id);
+            $destinationState = new State($destinationAddress->id_state, Context::getContext()->language->id);
+            $address = $this->getRightStructuredAddress($destinationAddress->address1, $destinationAddress->address2, $destinationState->name, $destinationAddress->city, $destinationAddress->postcode, $destinationCountry->name);
+            $destinationDeliveryOrderPlace->setAddress($address);
+            $destinationCoordinates = $this->getCoordinates($address);
 
-        $destinationDeliveryOrderPlace->setCoordinates($destinationCoordinates);
-        $params['destinations'] = array((array)$destinationDeliveryOrderPlace);
+            $destinationDeliveryOrderPlace->setCoordinates($destinationCoordinates);
+            $params['destinations'] = array((array)$destinationDeliveryOrderPlace);
+        }
 
         return $params;
     }
-    public function getShippingCost(Address $destinationAddress)
+    public function getShippingCost(Address $destinationAddress, $realType = self::REAL_TYPE_SCHEDULED_DELIVERY)
     {
-        $params = $this->getParams($destinationAddress);
+        $params = $this->getParams($destinationAddress, $realType);
 
         $response = $this->request(
             'POST',
@@ -139,9 +169,9 @@ class QwqerClient
         return isset($response['data']) ? (int)$response['data']['client_price'] / 100 : null;
     }
 
-    public function createDeliveryOrder(Address $destinationAddress)
+    public function createDeliveryOrder(Address $destinationAddress, $realType = self::REAL_TYPE_SCHEDULED_DELIVERY)
     {
-        $params = $this->getParams($destinationAddress);
+        $params = $this->getParams($destinationAddress, $realType);
 
         $response = $this->request(
             'POST',
@@ -196,5 +226,15 @@ class QwqerClient
     {
         $response = $this->request('GET', sprintf('/places/geocode/%s', $structuredAddress));
         return isset($response['data']) ? $response['data']['coordinates'] : null;
+    }
+
+    /**
+     * @return array|mixed
+     * @throws Exception
+     */
+    public function getParcelMachines()
+    {
+        $response = $this->request('GET', '/parcel-machines');
+        return isset($response['data']) ? $response['data']['omniva'] : [];
     }
 }

@@ -34,11 +34,13 @@ class Qwqer extends CarrierModule
 {
     protected $config_form = false;
 
+    public $id_carrier;
+
     public function __construct()
     {
         $this->name = 'qwqer';
         $this->tab = 'shipping_logistics';
-        $this->version = '1.0.0';
+        $this->version = '2.0.0';
         $this->author = 'SoftBuild';
         $this->need_instance = 0;
 
@@ -62,8 +64,12 @@ class Qwqer extends CarrierModule
     public function install()
     {
         Configuration::updateValue('QWQER_LIVE_MODE', false);
-        Configuration::updateValue('QWQER_TITLE', $this->displayName);
+        Configuration::updateValue('QWQER_TITLE', $this->displayName . ' - Scheduled Delivery');
+        Configuration::updateValue('QWQER_EXPRESS_DELIVERY_TITLE', $this->displayName . ' - Express Delivery');
+        Configuration::updateValue('QWQER_OMNIVA_DELIVERY_TITLE', $this->displayName . ' - Omniva Parcel Terminal');
         Configuration::updateValue('QWQER_REFERENCE_ID', 0);
+        Configuration::updateValue('QWQER_EXPRESS_DELIVERY_REFERENCE_ID', 0);
+        Configuration::updateValue('QWQER_OMNIVA_DELIVERY_REFERENCE_ID', 0);
         Configuration::updateValue('QWQER_TRADING_POINT_ID', 2);
         Configuration::updateValue('QWQER_ORDER_CATEGORY', 'Other');
         Configuration::updateValue('QWQER_DEFAULT_SHIPPING_COST', 0);
@@ -72,15 +78,17 @@ class Qwqer extends CarrierModule
         Configuration::updateValue('QWQER_STORE_ID', isset($store[0]) ? $store[0]['id_store'] : 0);
 
         $res = parent::install() &&
-            $this->registerHook('actionValidateOrder');
+            $this->registerHook('actionValidateOrder') &&
+            $this->registerHook('displayCarrierExtraContent') &&
+            $this->registerHook('actionValidateStepComplete');
 
         if ($res) {
             $qwqerCarrier = new Carrier();
             $qwqerCarrier->active = true;
             $qwqerCarrier->name = $this->displayName;
-            /*$qwqerCarrier->is_module = true;*/
+            $qwqerCarrier->is_module = true;
+            $qwqerCarrier->need_range = true;
             $qwqerCarrier->shipping_external = true;
-            $qwqerCarrier->external_module_name = $this->name;
             $qwqerCarrier->external_module_name = $this->name;
             foreach (Language::getIDs() as $id) {
                 $qwqerCarrier->delay[$id] = '-';
@@ -107,6 +115,70 @@ class Qwqer extends CarrierModule
             $rangeWeight->delimiter2 = 30;
             $rangeWeight->save();
 
+            $qwqerExpressCarrier = new Carrier();
+            $qwqerExpressCarrier->active = true;
+            $qwqerExpressCarrier->name = $this->displayName . ' - Express Delivery';
+            $qwqerExpressCarrier->is_module = true;
+            $qwqerExpressCarrier->need_range = true;
+            $qwqerExpressCarrier->shipping_external = true;
+            $qwqerExpressCarrier->external_module_name = $this->name;
+            foreach (Language::getIDs() as $id) {
+                $qwqerExpressCarrier->delay[$id] = '-';
+            }
+            $qwqerExpressCarrier->save();
+
+            Configuration::updateValue('QWQER_EXPRESS_DELIVERY_REFERENCE_ID', $qwqerExpressCarrier->id);
+
+            foreach (Zone::getZones() as $zone) {
+                $qwqerExpressCarrier->addZone($zone['id_zone']);
+            }
+
+            $groups_ids = array();
+            $groups = Group::getGroups(Context::getContext()->language->id);
+
+            foreach ($groups as $group) {
+                $groups_ids[] = $group['id_group'];
+            }
+            $qwqerExpressCarrier->setGroups($groups_ids);
+
+            $rangeWeight = new RangeWeight();
+            $rangeWeight->id_carrier = $qwqerExpressCarrier->id;
+            $rangeWeight->delimiter1 = 0;
+            $rangeWeight->delimiter2 = 30;
+            $rangeWeight->save();
+
+            $qwqerOmnivaCarrier = new Carrier();
+            $qwqerOmnivaCarrier->active = true;
+            $qwqerOmnivaCarrier->name = $this->displayName . ' - Omniva Parcel Terminal';
+            $qwqerOmnivaCarrier->is_module = true;
+            $qwqerOmnivaCarrier->need_range = true;
+            $qwqerOmnivaCarrier->shipping_external = true;
+            $qwqerOmnivaCarrier->external_module_name = $this->name;
+            foreach (Language::getIDs() as $id) {
+                $qwqerOmnivaCarrier->delay[$id] = '-';
+            }
+            $qwqerOmnivaCarrier->save();
+
+            Configuration::updateValue('QWQER_OMNIVA_DELIVERY_REFERENCE_ID', $qwqerOmnivaCarrier->id);
+
+            foreach (Zone::getZones() as $zone) {
+                $qwqerOmnivaCarrier->addZone($zone['id_zone']);
+            }
+
+            $groups_ids = array();
+            $groups = Group::getGroups(Context::getContext()->language->id);
+
+            foreach ($groups as $group) {
+                $groups_ids[] = $group['id_group'];
+            }
+            $qwqerOmnivaCarrier->setGroups($groups_ids);
+
+            $rangeWeight = new RangeWeight();
+            $rangeWeight->id_carrier = $qwqerOmnivaCarrier->id;
+            $rangeWeight->delimiter1 = 0;
+            $rangeWeight->delimiter2 = 30;
+            $rangeWeight->save();
+
             $addressRequiredFiled = new CustomerAddress();
             $addressRequiredFiled->addFieldsRequiredDatabase(array(
                 'phone',
@@ -127,6 +199,8 @@ class Qwqer extends CarrierModule
     {
         Configuration::deleteByName('QWQER_LIVE_MODE');
         Configuration::deleteByName('QWQER_TITLE');
+        Configuration::deleteByName('QWQER_EXPRESS_DELIVERY_TITLE');
+        Configuration::deleteByName('QWQER_OMNIVA_DELIVERY_TITLE');
         Configuration::deleteByName('QWQER_API_KEY');
         Configuration::deleteByName('QWQER_TRADING_POINT_ID');
         Configuration::deleteByName('QWQER_STORE_ID');
@@ -135,6 +209,10 @@ class Qwqer extends CarrierModule
 
         $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_REFERENCE_ID'));
         Configuration::deleteByName('QWQER_REFERENCE_ID');
+        $qwqerExpressCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID'));
+        Configuration::deleteByName('QWQER_EXPRESS_DELIVERY_REFERENCE_ID');
+        $qwqerOmnivaCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID'));
+        Configuration::deleteByName('QWQER_OMNIVA_DELIVERY_REFERENCE_ID');
 
         $addressRequiredFiled = new CustomerAddress();
         $objectName = $addressRequiredFiled->getObjectName();
@@ -147,7 +225,10 @@ class Qwqer extends CarrierModule
             'DELETE FROM ' . _DB_PREFIX_ . 'required_field'
             . " WHERE object_name = '" . Db::getInstance()->escape($objectName) . "'");
 
-        return parent::uninstall() && $qwqerCarrier->delete();
+        return parent::uninstall()
+            && $qwqerCarrier->delete()
+            && $qwqerExpressCarrier->delete()
+            && $qwqerOmnivaCarrier->delete();
     }
 
     /**
@@ -213,6 +294,16 @@ class Qwqer extends CarrierModule
                         'type' => 'text',
                         'name' => 'QWQER_TITLE',
                         'label' => $this->l('Title'),
+                    ),
+                    array(
+                        'type' => 'text',
+                        'name' => 'QWQER_EXPRESS_DELIVERY_TITLE',
+                        'label' => $this->l('Express Delivery Title'),
+                    ),
+                    array(
+                        'type' => 'text',
+                        'name' => 'QWQER_OMNIVA_DELIVERY_TITLE',
+                        'label' => $this->l('Omniva Delivery Title'),
                     ),
                     /*array(
                         'type' => 'switch',
@@ -332,6 +423,8 @@ class Qwqer extends CarrierModule
             'QWQER_LIVE_MODE' => Configuration::get('QWQER_LIVE_MODE'),
             'QWQER_API_KEY' => Configuration::get('QWQER_API_KEY'),
             'QWQER_TITLE' => Configuration::get('QWQER_TITLE'),
+            'QWQER_EXPRESS_DELIVERY_TITLE' => Configuration::get('QWQER_EXPRESS_DELIVERY_TITLE'),
+            'QWQER_OMNIVA_DELIVERY_TITLE' => Configuration::get('QWQER_OMNIVA_DELIVERY_TITLE'),
             'QWQER_TRADING_POINT_ID' => Configuration::get('QWQER_TRADING_POINT_ID'),
             'QWQER_STORE_ID' => Configuration::get('QWQER_STORE_ID'),
             'QWQER_ORDER_CATEGORY' => Configuration::get('QWQER_ORDER_CATEGORY'),
@@ -352,6 +445,18 @@ class Qwqer extends CarrierModule
             $qwqerCarrier->save();
         }
 
+        if (Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID')) {
+            $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID'));
+            $qwqerCarrier->active = false;
+            $qwqerCarrier->save();
+        }
+
+        if (Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID')) {
+            $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID'));
+            $qwqerCarrier->active = false;
+            $qwqerCarrier->save();
+        }
+
         return parent::disable($force_all);
     }
 
@@ -364,6 +469,18 @@ class Qwqer extends CarrierModule
     {
         if (Configuration::get('QWQER_REFERENCE_ID')) {
             $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_REFERENCE_ID'));
+            $qwqerCarrier->active = true;
+            $qwqerCarrier->save();
+        }
+
+        if (Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID')) {
+            $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID'));
+            $qwqerCarrier->active = true;
+            $qwqerCarrier->save();
+        }
+
+        if (Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID')) {
+            $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID'));
             $qwqerCarrier->active = true;
             $qwqerCarrier->save();
         }
@@ -386,6 +503,14 @@ class Qwqer extends CarrierModule
         $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_REFERENCE_ID'));
         $qwqerCarrier->name = Configuration::get('QWQER_TITLE');
         $qwqerCarrier->save();
+
+        $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID'));
+        $qwqerCarrier->name = Configuration::get('QWQER_EXPRESS_DELIVERY_TITLE');
+        $qwqerCarrier->save();
+
+        $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID'));
+        $qwqerCarrier->name = Configuration::get('QWQER_OMNIVA_DELIVERY_TITLE');
+        $qwqerCarrier->save();
     }
 
     /**
@@ -404,12 +529,22 @@ class Qwqer extends CarrierModule
      */
     public function getOrderShippingCostExternal($params)
     {
-        $cacheKey = 'Qwqer::getOrderShippingCostExternal_' . $params->id . '_' . $params->id_address_delivery;
+        $cacheKey = 'Qwqer::getOrderShippingCostExternal_' . $params->id . '_' . $params->id_address_delivery
+            . '_' . $this->id_carrier;
         if (!Cache::isStored($cacheKey)) {
             try {
                 $qwqerClient = new QwqerClient();
                 $shippingAddress = new Address($params->id_address_delivery);
-                $shippingCost = $qwqerClient->getShippingCost($shippingAddress);
+                $realType = QwqerClient::REAL_TYPE_SCHEDULED_DELIVERY;
+                $qwqerExpressCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID'));
+                if ($this->id_carrier == $qwqerExpressCarrier->id) {
+                    $realType = QwqerClient::REAL_TYPE_EXPRESS_DELIVERY;
+                }
+                $qwqerOmnivaCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID'));
+                if ($this->id_carrier == $qwqerOmnivaCarrier->id) {
+                    $realType = QwqerClient::REAL_TYPE_OMNIVA_DELIVERY;
+                }
+                $shippingCost = $qwqerClient->getShippingCost($shippingAddress, $realType);
                 if ($shippingCost != null) {
                     Cache::store($cacheKey, $shippingCost);
                 } else {
@@ -436,19 +571,62 @@ class Qwqer extends CarrierModule
          */
         $order = $params['order'];
         $qwqerCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_REFERENCE_ID'));
-        if ($order->id_carrier == $qwqerCarrier->id) {
+        $this->setDeliveryTrackingNumber($qwqerCarrier->id, $order, QwqerClient::REAL_TYPE_SCHEDULED_DELIVERY);
+        $qwqerExpressCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID'));
+        $this->setDeliveryTrackingNumber($qwqerExpressCarrier->id, $order, QwqerClient::REAL_TYPE_EXPRESS_DELIVERY);
+        $qwqerExpressCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID'));
+        $this->setDeliveryTrackingNumber($qwqerExpressCarrier->id, $order, QwqerClient::REAL_TYPE_OMNIVA_DELIVERY);
+    }
+
+    public function setDeliveryTrackingNumber($carrierId, $order, $realType = QwqerClient::REAL_TYPE_SCHEDULED_DELIVERY)
+    {
+        if ($order->id_carrier == $carrierId) {
             $qwqerClient = new QwqerClient();
             $shippingAddress = new Address($order->id_address_delivery);
-            $shippingOrderId = $qwqerClient->createDeliveryOrder($shippingAddress);
+            $shippingOrderId = $qwqerClient->createDeliveryOrder($shippingAddress, $realType);
 
             $shippings = $order->getShipping();
             foreach ($shippings as $shipping) {
-                if ($shipping['id_carrier'] == $qwqerCarrier->id) {
+                if ($shipping['id_carrier'] == $carrierId) {
                     $orderCarrier = new OrderCarrier($shipping['id_order_carrier']);
                     $orderCarrier->tracking_number = $shippingOrderId;
                     $orderCarrier->save();
                 }
             }
+        }
+    }
+
+    /**
+     * @param $params
+     * @return false|string|void
+     * @throws SmartyException
+     */
+    public function hookDisplayCarrierExtraContent($params)
+    {
+        $carrier = $params['carrier'];
+        $qwqerOmnivaCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID'));
+
+        if ($carrier['id'] == $qwqerOmnivaCarrier->id) {
+            $qwqerClient = new QwqerClient();
+            $parcelMachines = $qwqerClient->getParcelMachines();
+
+            $this->context->smarty->assign([
+                'parcel_machines' => $parcelMachines,
+                'selected_parcel_machine_id' => Context::getContext()->cookie->selected_parcel_machine_id,
+            ]);
+
+            return $this->context->smarty->fetch($this->local_path.'views/templates/front/parcel_machines.tpl');
+        }
+    }
+
+    public function hookActionValidateStepComplete($params)
+    {
+        $parcelMachineId = isset($params['request_params']['qwqer_parcel_machine'])
+            ? $params['request_params']['qwqer_parcel_machine']
+            : null;
+        if (!empty($parcelMachineId)) {
+            Context::getContext()->cookie->selected_parcel_machine_id = $parcelMachineId;
+            Context::getContext()->cookie->write();
         }
     }
 }
