@@ -576,6 +576,43 @@ class Qwqer extends CarrierModule
         $this->setDeliveryTrackingNumber($qwqerExpressCarrier->id, $order, QwqerClient::REAL_TYPE_EXPRESS_DELIVERY);
         $qwqerExpressCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_OMNIVA_DELIVERY_REFERENCE_ID'));
         $this->setDeliveryTrackingNumber($qwqerExpressCarrier->id, $order, QwqerClient::REAL_TYPE_OMNIVA_DELIVERY);
+
+        if ($order->id_carrier == $qwqerExpressCarrier->id) {
+            $qwqerClient = new QwqerClient();
+            $parcelMachines = $qwqerClient->getParcelMachines();
+
+            foreach ($parcelMachines as $machine) {
+                if ($machine['id'] == Context::getContext()->cookie->selected_parcel_machine_id) {
+
+                    $currentDeliveryAddress = new Address($order->id_address_delivery);
+                    $alias = Tools::truncate($machine['name'], Address::$definition['fields']['alias']['size']);
+
+                    $deliveryAddress = new Address($this->getAddressIdByAliasAndCustomerId($alias, $order->id_customer));
+                    if (!Validate::isLoadedObject($deliveryAddress)) {
+                        $country = new Country(Country::getByIso($machine['country']));
+                        $deliveryAddress->id_country = Validate::isLoadedObject($country) ? $country->id : null;
+                        $deliveryAddress->city = $machine['city'];
+                        $deliveryAddress->alias = $alias;
+                        $deliveryAddress->firstname = $currentDeliveryAddress->firstname;
+                        $deliveryAddress->lastname = $currentDeliveryAddress->lastname;
+                        $deliveryAddress->id_customer = $currentDeliveryAddress->id_customer;
+
+
+                        $deliveryAddress->address1 = $machine['name'];
+                        $deliveryAddress->postcode = $currentDeliveryAddress->postcode;
+                        $deliveryAddress->phone = $currentDeliveryAddress->phone;
+                        $deliveryAddress->phone_mobile = $currentDeliveryAddress->phone_mobile;
+
+                        $deliveryAddress->save();
+                    }
+
+                    $order->id_address_delivery = $deliveryAddress->id;
+                    $order->save();
+
+                    break;
+                }
+            }
+        }
     }
 
     public function setDeliveryTrackingNumber($carrierId, $order, $realType = QwqerClient::REAL_TYPE_SCHEDULED_DELIVERY)
@@ -628,5 +665,17 @@ class Qwqer extends CarrierModule
             Context::getContext()->cookie->selected_parcel_machine_id = $parcelMachineId;
             Context::getContext()->cookie->write();
         }
+    }
+
+    public static function getAddressIdByAliasAndCustomerId($alias, $customerId)
+    {
+        $query = new DbQuery();
+        $query->select('id_address');
+        $query->from('address');
+        $query->where('alias = "'.pSQL($alias) . '"');
+        $query->where('deleted = 0');
+        $query->where('id_customer = ' . (int)$customerId);
+
+        return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($query);
     }
 }
