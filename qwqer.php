@@ -585,7 +585,11 @@ class Qwqer extends CarrierModule
                 if ($machine['id'] == Context::getContext()->cookie->selected_parcel_machine_id) {
 
                     $currentDeliveryAddress = new Address($order->id_address_delivery);
-                    $alias = Tools::truncate($machine['name'], Address::$definition['fields']['alias']['size']);
+                    $addSuffix = false;
+                    if (mb_strlen($machine['name']) > Address::$definition['fields']['alias']['size']) {
+                        $addSuffix = true;
+                    }
+                    $alias = mb_substr($machine['name'], 0, Address::$definition['fields']['alias']['size'] - 3) . ($addSuffix ? '...' : '');
 
                     $deliveryAddress = new Address($this->getAddressIdByAliasAndCustomerId($alias, $order->id_customer));
                     if (!Validate::isLoadedObject($deliveryAddress)) {
