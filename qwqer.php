@@ -40,7 +40,7 @@ class Qwqer extends CarrierModule
     {
         $this->name = 'qwqer';
         $this->tab = 'shipping_logistics';
-        $this->version = '2.0.0';
+        $this->version = '2.0.1';
         $this->author = 'SoftBuild';
         $this->need_instance = 0;
 
@@ -78,8 +78,10 @@ class Qwqer extends CarrierModule
         Configuration::updateValue('QWQER_STORE_ID', isset($store[0]) ? $store[0]['id_store'] : 0);
 
         $res = parent::install() &&
+            $this->installTab() &&
             $this->registerHook('actionValidateOrder') &&
             $this->registerHook('displayCarrierExtraContent') &&
+            $this->registerHook('displayBackOfficeOrderActions') &&
             $this->registerHook('actionValidateStepComplete');
 
         if ($res) {
@@ -226,6 +228,7 @@ class Qwqer extends CarrierModule
             . " WHERE object_name = '" . Db::getInstance()->escape($objectName) . "'");
 
         return parent::uninstall()
+            && $this->uninstallTab()
             && $qwqerCarrier->delete()
             && $qwqerExpressCarrier->delete()
             && $qwqerOmnivaCarrier->delete();
@@ -681,5 +684,53 @@ class Qwqer extends CarrierModule
         $query->where('id_customer = ' . (int)$customerId);
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($query);
+    }
+
+    public function hookDisplayBackOfficeOrderActions($params)
+    {
+        $id_order = $params['id_order'];
+        $order = new Order($id_order);
+
+        $trackingNumber = null;
+        $shippings = $order->getShipping();
+        foreach ($shippings as $shipping) {
+            if ($shipping['id_carrier'] == $order->id_carrier) {
+                $orderCarrier = new OrderCarrier($shipping['id_order_carrier']);
+
+                $trackingNumber = $orderCarrier->tracking_number;
+                break;
+            }
+        }
+
+        $this->context->smarty->assign([
+            'tracking_number' => $trackingNumber,
+            'download_link' => $this->context->link->getAdminLink('AdminQwqerConfig', true, [], ['action' => 'delivery_cover_download', 'delivery_order_id' => $trackingNumber]),
+        ]);
+
+        return $this->context->smarty->fetch($this->local_path.'views/templates/hook/backOfficeOrderActions.tpl');
+    }
+
+    public function installTab()
+    {
+        $tab = new Tab();
+        $tab->active = 1;
+        $tab->class_name = 'AdminQwqerConfig';
+        $tab->name = array();
+        foreach (Language::getLanguages(true) as $lang) {
+            $tab->name[$lang['id_lang']] = "Qwqer Configuration";
+        }
+        $tab->module = $this->name;
+        return $tab->add();
+    }
+
+    public function uninstallTab()
+    {
+        $id_tab = (int)Tab::getIdFromClassName('AdminQwqerConfig');
+        if ($id_tab) {
+            $tab = new Tab($id_tab);
+            return $tab->delete();
+        } else {
+            return false;
+        }
     }
 }

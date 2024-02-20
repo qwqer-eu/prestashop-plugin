@@ -237,4 +237,13 @@ class QwqerClient
         $response = $this->request('GET', '/parcel-machines');
         return isset($response['data']) ? $response['data']['omniva'] : [];
     }
+
+    /**
+     * @param $deliveryOrderId
+     * @return false|string
+     */
+    public function getDeliveryOrderCover($deliveryOrderId)
+    {
+        return file_get_contents(sprintf('https://qwqer.lv/storage/delivery-order-covers/%s.pdf', $deliveryOrderId));
+    }
 }
