@@ -9,7 +9,7 @@ class QwqerClient
 {
     protected $apiKey;
 
-    protected $apiUrl = 'https://qwqer.hostcream.eu/api/v1/plugins/prestashop/';
+    protected $apiUrl = 'https://api.qwqer.lv/v1/plugins/presta-shop/';
 
     protected $tradingPointId;
 
