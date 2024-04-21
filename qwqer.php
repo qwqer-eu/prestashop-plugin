@@ -40,7 +40,7 @@ class Qwqer extends CarrierModule
     {
         $this->name = 'qwqer';
         $this->tab = 'shipping_logistics';
-        $this->version = '2.0.1';
+        $this->version = '2.0.2';
         $this->author = 'SoftBuild';
         $this->need_instance = 0;
 
@@ -51,8 +51,8 @@ class Qwqer extends CarrierModule
 
         parent::__construct();
 
-        $this->displayName = $this->l('Qwqer Delivery Service');
-        $this->description = $this->l('Qwqer Delivery Service Qwqer Delivery Service Qwqer Delivery Service Qwqer Delivery Service Qwqer Delivery Service Qwqer Delivery Service Qwqer Delivery Service Qwqer Delivery Service ');
+        $this->displayName = $this->l('QWQER Delivery Service');
+        $this->description = $this->l('Say Delivery Say QWQER Your trusted partner for deliveries and transportation');
 
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
     }
@@ -346,6 +346,14 @@ class Qwqer extends CarrierModule
                         'col' => 1,
                         'row' => 1,
                         'type' => 'text',
+                        'desc' => $this->l('Additional shipping cost will be added to QWQER shipping price(2.55 + 3 = 5.55(+VAT))'),
+                        'name' => 'QWQER_ADDITIONAL_SHIPPING_COST',
+                        'label' => $this->l('Additional Shipping Cost'),
+                    ),
+                    array(
+                        'col' => 1,
+                        'row' => 1,
+                        'type' => 'text',
                         'desc' => $this->l('Default shipping cost'),
                         'name' => 'QWQER_DEFAULT_SHIPPING_COST',
                         'label' => $this->l('Shipping Cost'),
@@ -432,6 +440,7 @@ class Qwqer extends CarrierModule
             'QWQER_STORE_ID' => Configuration::get('QWQER_STORE_ID'),
             'QWQER_ORDER_CATEGORY' => Configuration::get('QWQER_ORDER_CATEGORY'),
             'QWQER_DEFAULT_SHIPPING_COST' => Configuration::get('QWQER_DEFAULT_SHIPPING_COST'),
+            'QWQER_ADDITIONAL_SHIPPING_COST' => Configuration::get('QWQER_ADDITIONAL_SHIPPING_COST'),
         );
     }
 
@@ -533,7 +542,7 @@ class Qwqer extends CarrierModule
     public function getOrderShippingCostExternal($params)
     {
         $cacheKey = 'Qwqer::getOrderShippingCostExternal_' . $params->id . '_' . $params->id_address_delivery
-            . '_' . $this->id_carrier;
+            . '_' . $this->id_carrier . '_' . md5(serialize($this->getConfigFormValues()));
         if (!Cache::isStored($cacheKey)) {
             try {
                 $qwqerClient = new QwqerClient();
@@ -549,7 +558,7 @@ class Qwqer extends CarrierModule
                 }
                 $shippingCost = $qwqerClient->getShippingCost($shippingAddress, $realType);
                 if ($shippingCost != null) {
-                    Cache::store($cacheKey, $shippingCost);
+                    Cache::store($cacheKey, $shippingCost + Configuration::get('QWQER_ADDITIONAL_SHIPPING_COST'));
                 } else {
                     Cache::store($cacheKey, Configuration::get('QWQER_DEFAULT_SHIPPING_COST'));
                 }
