@@ -82,6 +82,8 @@ class Qwqer extends CarrierModule
             $this->registerHook('actionValidateOrder') &&
             $this->registerHook('displayCarrierExtraContent') &&
             $this->registerHook('displayBackOfficeOrderActions') &&
+            $this->registerHook('displayAdminProductsExtra') &&
+            $this->registerHook('actionProductUpdate') &&
             $this->registerHook('actionValidateStepComplete');
 
         if ($res) {
@@ -192,6 +194,9 @@ class Qwqer extends CarrierModule
                 'phone',
                 'postcode'
             ));
+
+            //install tables
+            require_once dirname(__FILE__) . '/sql/install.php';
         }
 
         return $res;
@@ -226,6 +231,9 @@ class Qwqer extends CarrierModule
         Db::getInstance()->execute(
             'DELETE FROM ' . _DB_PREFIX_ . 'required_field'
             . " WHERE object_name = '" . Db::getInstance()->escape($objectName) . "'");
+
+        //uninstall tables
+        require_once dirname(__FILE__) . '/sql/uninstall.php';
 
         return parent::uninstall()
             && $this->uninstallTab()
@@ -536,17 +544,35 @@ class Qwqer extends CarrierModule
     }
 
     /**
-     * @param Cart $params
+     * @param Cart $cart
      * @return int
+     * @throws Exception
      */
-    public function getOrderShippingCostExternal($params)
+    public function getOrderShippingCostExternal($cart)
     {
-        $cacheKey = 'Qwqer::getOrderShippingCostExternal_' . $params->id . '_' . $params->id_address_delivery
+        foreach ($cart->getProducts() as $item) {
+            if ($deliveryProduct = QwqerDeliveryProduct::getByProductId($item['id_product'])) {
+                if (!$deliveryProduct->is_available) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if ($this->id_carrier == Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID')) {
+            //checking work time, if not is not work time, will hide the delivery
+            if (!$this->checkWorkTimeOfShop()) {
+                return false;
+            }
+        }
+
+        $cacheKey = 'Qwqer::getOrderShippingCostExternal_' . $cart->id . '_' . $cart->id_address_delivery
             . '_' . $this->id_carrier . '_' . md5(serialize($this->getConfigFormValues()));
         if (!Cache::isStored($cacheKey)) {
             try {
                 $qwqerClient = new QwqerClient();
-                $shippingAddress = new Address($params->id_address_delivery);
+                $shippingAddress = new Address($cart->id_address_delivery);
                 $realType = QwqerClient::REAL_TYPE_SCHEDULED_DELIVERY;
                 $qwqerExpressCarrier = Carrier::getCarrierByReference(Configuration::get('QWQER_EXPRESS_DELIVERY_REFERENCE_ID'));
                 if ($this->id_carrier == $qwqerExpressCarrier->id) {
@@ -719,6 +745,37 @@ class Qwqer extends CarrierModule
         return $this->context->smarty->fetch($this->local_path.'views/templates/hook/backOfficeOrderActions.tpl');
     }
 
+    /**
+     * Return now is work time of shop or not
+     *
+     * @return bool
+     * @throws Exception
+     */
+    public function checkWorkTimeOfShop()
+    {
+        $key = 'Qwqer::checkWorkTimeOfShop_' . date('Y-m-d') . '_' . md5(serialize($this->getConfigFormValues()));
+        if (!Cache::isStored($key)) {
+            $qwqerClient = new QwqerClient();
+            $merchant = $qwqerClient->getMerchantInfo();
+            Cache::store($key, $merchant['working_hours'] ?? []);
+        }
+
+        $todayDay = date('l');
+        $currentTime = date('H:i');
+        $isWorking = true;//by default if work hours are not configured a delivery method must be showed
+        if ($workingHours = Cache::retrieve($key)) {
+            $isWorking = false;//if shop has work hours, need to check the time
+            foreach ($workingHours as $hour) {
+                if (strtolower($hour['day_of_week']) == strtolower($todayDay)
+                    && $currentTime >= $hour['time_from'] && $currentTime <= $hour['time_to']) {
+                    $isWorking = true;
+                }
+            }
+        }
+
+        return $isWorking;
+    }
+
     public function installTab()
     {
         $tab = new Tab();
@@ -741,5 +798,51 @@ class Qwqer extends CarrierModule
         } else {
             return false;
         }
+    }
+
+    /**
+     * @param $params
+     * @return void
+     */
+    public function hookDisplayAdminProductsExtra($params)
+    {
+        $id_product = $params['id_product'];
+        file_put_contents(_PS_ROOT_DIR_ . '/log.txt', print_r(array_keys($params), true));
+
+        $is_available = false;
+        if ($deliveryProduct = QwqerDeliveryProduct::getByProductId($id_product)) {
+            $is_available = $deliveryProduct->is_available;
+        }
+        $this->context->smarty->assign([
+            'is_available' => $is_available,
+        ]);
+
+        return $this->context->smarty->fetch($this->local_path.'views/templates/admin/adminProductsExtra.tpl');
+    }
+
+    /**
+     * @param $params
+     * @return void
+     * @throws PrestaShopException
+     */
+    public function hookActionProductUpdate($params)
+    {
+        //old bug of prestashop, run hook update only one time
+        static $run = false;
+        if ($run) {
+            return;
+        }
+        $run = true;
+
+        $id_product = $params['id_product'];
+
+        if (!$deliveryProduct = QwqerDeliveryProduct::getByProductId($id_product)) {
+            $deliveryProduct = new QwqerDeliveryProduct();
+        }
+
+        $deliveryProduct->id_product = $id_product;
+        $deliveryProduct->is_available = Tools::getValue('qwqer_is_available', false);
+
+        $deliveryProduct->save();
     }
 }

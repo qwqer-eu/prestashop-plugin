@@ -246,4 +246,22 @@ class QwqerClient
     {
         return file_get_contents(sprintf('https://qwqer.lv/storage/delivery-order-covers/%s.pdf', $deliveryOrderId));
     }
+
+    /**
+     * Return information about merchant(work hours, etc.)
+     *
+     * @return array|null
+     * @throws Exception
+     */
+    public function getMerchantInfo(): ?array
+    {
+        $response = $this->request(
+            'GET',
+            $this->changeTradingPointId(
+                '/trading-points/{trading-point-id}?include=working_hours,merchant'
+            )
+        );
+
+        return $response['data'] ?? null;
+    }
 }

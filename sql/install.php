@@ -25,9 +25,24 @@
 */
 $sql = array();
 
-$sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'qwqer` (
-    `id_qwqer` int(11) NOT NULL AUTO_INCREMENT,
-    PRIMARY KEY  (`id_qwqer`)
+$sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'qwqer_delivery_products` (
+    `id_qwqer_delivery_products` int(11) NOT NULL AUTO_INCREMENT,
+    `id_shop_default` INT(11) NOT NULL,
+    `id_product` int(11) NOT NULL,
+    `is_available` TINYINT DEFAULT 0,
+    `id_delivery_method` int(11),
+    `date_add` DATETIME NOT NULL,
+    `date_upd` DATETIME NOT NULL,
+    PRIMARY KEY  (`id_qwqer_delivery_products`)
+) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;';
+
+$sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'qwqer_delivery_products_shop` (
+    `id_qwqer_delivery_products` int(11) NOT NULL,
+    `id_shop` int(11) NOT NULL,
+    `id_product` int(11) NOT NULL,
+    `is_available` TINYINT DEFAULT 0,
+    `id_delivery_method` int(11),
+    UNIQUE KEY qwqer_delivery_products_shop (`id_qwqer_delivery_products`, `id_shop`)
 ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;';
 
 foreach ($sql as $query) {

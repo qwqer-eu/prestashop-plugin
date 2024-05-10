@@ -5,3 +5,4 @@ require_once dirname(__FILE__) . '/classes/objects/QwqerDeliveryOrder.php';
 require_once dirname(__FILE__) . '/classes/objects/QwqerDeliveryOrderPlace.php';
 require_once dirname(__FILE__) . '/classes/objects/QwqerDeliveryOrderRoute.php';
 require_once dirname(__FILE__) . '/classes/QwqerClient.php';
+require_once dirname(__FILE__) . '/classes/QwqerDeliveryProduct.php';
