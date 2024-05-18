@@ -367,6 +367,25 @@ class Qwqer extends CarrierModule
                         'label' => $this->l('Shipping Cost'),
                     ),
                     array(
+                        'type' => 'switch',
+                        'label' => $this->l('Enable availability delivery products'),
+                        'name' => 'QWQER_AVAILABLE_DELIVERY_GLOBAL',
+                        'is_bool' => true,
+                        'desc' => $this->l('Use for configuration delivery products which exists at your shop right now'),
+                        'values' => array(
+                            array(
+                                'id' => 'active_on',
+                                'value' => true,
+                                'label' => $this->l('Enabled')
+                            ),
+                            array(
+                                'id' => 'active_off',
+                                'value' => false,
+                                'label' => $this->l('Disabled')
+                            )
+                        ),
+                    ),
+                    array(
                         'col' => 5,
                         'type' => 'select',
                         'desc' => $this->l('Need for using store address, and coordinates'),
@@ -449,6 +468,7 @@ class Qwqer extends CarrierModule
             'QWQER_ORDER_CATEGORY' => Configuration::get('QWQER_ORDER_CATEGORY'),
             'QWQER_DEFAULT_SHIPPING_COST' => Configuration::get('QWQER_DEFAULT_SHIPPING_COST'),
             'QWQER_ADDITIONAL_SHIPPING_COST' => Configuration::get('QWQER_ADDITIONAL_SHIPPING_COST'),
+            'QWQER_AVAILABLE_DELIVERY_GLOBAL' => Configuration::get('QWQER_AVAILABLE_DELIVERY_GLOBAL'),
         );
     }
 
@@ -550,13 +570,15 @@ class Qwqer extends CarrierModule
      */
     public function getOrderShippingCostExternal($cart)
     {
-        foreach ($cart->getProducts() as $item) {
-            if ($deliveryProduct = QwqerDeliveryProduct::getByProductId($item['id_product'])) {
-                if (!$deliveryProduct->is_available) {
+        if (Configuration::get('QWQER_AVAILABLE_DELIVERY_GLOBAL')) {
+            foreach ($cart->getProducts() as $item) {
+                if ($deliveryProduct = QwqerDeliveryProduct::getByProductId($item['id_product'])) {
+                    if (!$deliveryProduct->is_available) {
+                        return false;
+                    }
+                } else {
                     return false;
                 }
-            } else {
-                return false;
             }
         }
 
@@ -806,8 +828,12 @@ class Qwqer extends CarrierModule
      */
     public function hookDisplayAdminProductsExtra($params)
     {
+        if (!Configuration::get('QWQER_AVAILABLE_DELIVERY_GLOBAL')) {
+            $this->warning[] = $this->l('You should enable availability delivery products at setting of the module for using the functionality');
+            return;
+        }
+
         $id_product = $params['id_product'];
-        file_put_contents(_PS_ROOT_DIR_ . '/log.txt', print_r(array_keys($params), true));
 
         $is_available = false;
         if ($deliveryProduct = QwqerDeliveryProduct::getByProductId($id_product)) {
@@ -827,6 +853,10 @@ class Qwqer extends CarrierModule
      */
     public function hookActionProductUpdate($params)
     {
+        if (!Configuration::get('QWQER_AVAILABLE_DELIVERY_GLOBAL')) {
+            return;
+        }
+
         //old bug of prestashop, run hook update only one time
         static $run = false;
         if ($run) {
